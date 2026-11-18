@@ -1,34 +1,56 @@
-// A working roblox-brainrot-01 entry (Node 22, standard library only): the game is this directory's Rojo
-// project, built into game.rbxl with `rojo build default.project.json --output game.rbxl`, and the program
-// hands it in. It copies game.rbxl, src/, screenshots/ and PLAY.json from beside this file to /output and
-// writes /output/dossier.json, the summary the judge reads, with the vendored make.fun library. A starting
-// point, not a winner: it is a grey square that moves with the arrow keys. Build your game, rebuild
-// game.rbxl, put your PNG or JPEG screenshots in screenshots/ (the first by name is the cover, and one of
-// them is the thumbnail you upload for your game on Roblox) and fill in PLAY.json with your published place.
+// Warung Rot: an entry for make.fun's roblox-brainrot-01 bounty (Node 22,
+// standard library only). The game lives in this directory's Rojo project;
+// `rojo build default.project.json --output game.rbxl` turns it into the
+// place file. This program hands the entry in: it copies game.rbxl, src/,
+// screenshots/ and PLAY.json from beside this file to /output and writes
+// /output/dossier.json with the vendored make.fun library, which is what
+// the judge reads. Directory copies run in sorted name order so the two
+// grading runs write identical bytes.
 //
-// Every name under /output starts with a letter, a digit or _ and holds only letters, digits, . _ and -: the
-// grader fails an entry whose output holds any other, so a file such as .gitkeep or .DS_Store copied in fails it.
-// So src/ and screenshots/ are copied without any name that starts with a dot, at any depth.
+// Every name under /output must start with a letter, a digit or _ and hold
+// only letters, digits, . _ and -; the copy below drops every name that
+// starts with a dot, at any depth, so a stray .gitkeep or .DS_Store can
+// never fail the entry.
 //
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { copyFileSync, cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-roblox.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-/** cpSync's filter: leave out every file and directory whose name starts with a dot (.gitkeep, .DS_Store, .git). */
-const notDotted = (path: string): boolean => !basename(path).startsWith('.');
+// Create the output directory up front so the copies below never fail on a
+// fresh container or a local out/ that does not exist yet.
+mkdirSync(out, { recursive: true });
+
+/**
+ * Copy one directory tree into another, visiting entries in sorted name
+ * order and skipping every name that starts with a dot. Sorting keeps the
+ * run deterministic: two runs lay out the same bytes in the same order.
+ */
+function copyTreeSorted(from: string, to: string): void {
+  mkdirSync(to, { recursive: true });
+  for (const name of readdirSync(from).sort()) {
+    if (name.startsWith('.')) continue;
+    const source = join(from, name);
+    const target = join(to, name);
+    if (statSync(source).isDirectory()) {
+      copyTreeSorted(source, target);
+    } else {
+      copyFileSync(source, target);
+    }
+  }
+}
 
 copyFileSync(join(here, 'game.rbxl'), join(out, 'game.rbxl'));
 copyFileSync(join(here, 'PLAY.json'), join(out, 'PLAY.json'));
-cpSync(join(here, 'src'), join(out, 'src'), { recursive: true, filter: notDotted });
+copyTreeSorted(join(here, 'src'), join(out, 'src'));
 mkdirSync(join(out, 'screenshots'), { recursive: true });
-if (existsSync(join(here, 'screenshots'))) cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true, filter: notDotted });
+if (existsSync(join(here, 'screenshots'))) copyTreeSorted(join(here, 'screenshots'), join(out, 'screenshots'));
 
 // The scorer's own caps (reference/gate.json): only text_max_bytes shapes the bytes; the others refuse an entry the
 // scorer would refuse (more than 4 screenshots or one over 256 KiB; a place of more than 500000 instances, whose
